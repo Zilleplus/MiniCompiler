@@ -27,6 +27,11 @@ impl Parser {
         panic!("{message}");
     }
 
+    fn error_owned(&mut self, message: String) {
+        // Dirty hack to get going
+        panic!("{message}");
+    }
+
     fn peek(&self) -> Option<&Token> {
         if self.current >= self.tokens.len() {
             return None;
@@ -228,14 +233,13 @@ impl Parser {
         None
     }
 
-    fn bblock(&mut self) -> Option<Ast>{
+    fn bblock(&mut self) -> Option<Ast> {
         let mut statements: Vec<StmtKind> = Vec::new();
 
         if let Some(t) = self.consume() {
             match t.token_type {
                 TokenType::RightSquareBrackets => {}
-                _ => 
-                {
+                _ => {
                     self.error("Missing open brackets on basic block.");
                     return None;
                 } // early exit not open bracket
@@ -243,8 +247,8 @@ impl Parser {
         }
 
         loop {
-            if let Some(t) = self.consume(){
-                let ast = match t.token_type{
+            if let Some(t) = self.consume() {
+                let ast = match t.token_type {
                     TokenType::LeftCurlyBrackets => self.bblock(),
                     TokenType::RightCurlyBrackets => None,
                     _ => {
@@ -259,14 +263,66 @@ impl Parser {
         }
     }
 
-    fn decl(&mut self) -> Option<ExprKind> {
+    fn var_decl(&mut self) -> Option<StmtKind> {
         self.consume_tokentype(TokenType::Var);
         if let Some(identifier) = self.identifier() {
-            Some(ExprKind::Decl(identifier))
+            Some(StmtKind::VarDecl(identifier))
         } else {
             self.error("Expected identifier name");
             None
         }
+    }
+
+    fn func_decl(&mut self) -> Option<Ast>{
+        if let None = self.consume_tokentype(TokenType::Func {}) {
+            self.error("A function declaration should start wiht func");
+            return None;
+        }
+
+        if let None = self.identifier() {
+            self.error_owned(format!("Expected function name"));
+        }
+
+
+        if let None = self.consume_tokentype(TokenType::LeftParen {}) {
+            self.error("Expected left paren to define the arguments of the function.")
+        }
+
+        let mut args: Vec<FunArg> = vec![];
+        loop {
+            if let Some(name) = self.identifier() {
+                if let None = self.consume_tokentype(TokenType::Colon {}) {
+                    self.error("Colon missing between argument identifier and type.");
+                }
+                if let Some(type_name) = self.identifier() {
+                    let arg_type = UnresolvedType { name: type_name };
+                    args.push(FunArg { name, arg_type });
+                } else {
+                    self.error("Expected type name.")
+                }
+            } else {
+                break;
+            }
+
+            if let None = self.consume_tokentype(TokenType::Comma) {
+                // No more arguments, so break the loop.
+                break;
+            }
+        }
+
+        if let None = self.consume_tokentype(TokenType::RightParen {}) {
+            self.error("Expected closing parent of function arguments");
+        }
+
+        // let return_type =  // TODO!!
+
+        let implementation = self.bblock();
+
+        None
+    }
+
+    fn struct_decl(&mut self) -> Option<Ast> {
+        None
     }
 
     fn call(&mut self) -> Option<ExprKind> {
@@ -278,8 +334,8 @@ impl Parser {
             if let Some(t) = self.peek() {
                 match t.token_type.borrow() {
                     // Top level can only be a struct or a function at this point.
-                    TokenType::Func => self.decl(),
-                    TokenType::Struct => self.decl(),
+                    TokenType::Func => self.func_decl(),
+                    TokenType::Struct => self.struct_decl(),
                     _ => {
                         // unknown symbol
                         break;
@@ -318,12 +374,32 @@ fn buildSum(left: Box<ExprKind>, right: Box<ExprKind>) -> Box<ExprKind> {
 }
 
 #[test]
-fn expressions() {
+fn test_expressions() {
     let test_data = vec![("2+3*4", "(+ 2 (* 3 4))"), ("2*3+4", "(+ (* 2 3) 4)")];
 
     for (str_expression, expected_parsed_expression) in test_data {
         let lexer_res = lexer::Lexer::new(PathBuf::new(), str_expression.to_owned()).scan();
         let expr = Parser::new(lexer_res.tokens).expr(None);
+
+        assert!(expr.is_some());
+        let expr = expr.unwrap().to_string();
+
+        println!("parsed expression {}", expr);
+        assert_eq!(expr, expected_parsed_expression);
+    }
+}
+
+#[test]
+fn test_ast() {
+    let test_data = vec![(
+        "func square(int a) -> i32{}",
+        "(func (prototype ((int a)) int))",
+    )];
+
+    for (str_expression, expected_parsed_expression) in test_data {
+        let lexer_res = lexer::Lexer::new(PathBuf::new(), str_expression.to_owned()).scan();
+        let mut parser = Parser::new(lexer_res.tokens);
+        let expr = parser.parse();
 
         assert!(expr.is_some());
         let expr = expr.unwrap().to_string();

@@ -1,3 +1,5 @@
+use std::{fmt::format};
+
 #[derive(Debug, PartialEq, Eq)]
 pub enum BinaryOperatorKind {
     Plus,
@@ -95,7 +97,6 @@ pub enum ExprKind {
     Identifier(String),
     Literal(LiteralExpr),
     Binary(BinaryExpr),
-    Decl(String),
 }
 
 impl ExprKind {
@@ -109,7 +110,6 @@ impl ExprKind {
                 bin_expr.left.to_string(),
                 bin_expr.right.to_string()
             ),
-            ExprKind::Decl(name) => name.to_owned(),
         }
     }
 }
@@ -123,11 +123,65 @@ pub struct AssignExpr {
 #[derive(Debug, PartialEq, Eq)]
 pub enum StmtKind {
     Assign(AssignExpr),
+    VarDecl(String),
 }
+
+impl StmtKind {
+    pub fn to_string(&self) -> String {
+        match self {
+            StmtKind::Assign(asgExpr) => format!("(assign {0} {1})", asgExpr.left.to_string(), asgExpr.right.to_string()),
+            StmtKind::VarDecl(name) => name.to_owned(),
+        }
+    }
+}
+
+#[derive(Debug, PartialEq, Eq)]
+pub struct UnresolvedType{
+    pub name: String
+}
+
+#[derive(Debug, PartialEq, Eq)]
+pub struct FunArg{
+    pub name: String,
+    pub arg_type: UnresolvedType
+}
+
+impl FunArg{
+    pub fn to_string(&self) -> String{
+        format!("(arg {0} {1})", self.arg_type.name, self.name).to_owned()
+    }
+}
+
+
 
 #[derive(Debug, PartialEq, Eq)]
 pub enum Ast {
     Expr(ExprKind),
-    BasicBlock(),
+    BasicBlock{implementation: Vec<Box<Ast>>},
     Stmt(StmtKind),
+    FunDecl{name: String, args: Vec<FunArg>, returns: UnresolvedType, implementation: Box<Ast>},
+}
+
+impl Ast{
+    pub fn to_string(&self) -> String{
+        match  self {
+            Ast::Expr(expr) => expr.to_string(),
+            Ast::BasicBlock{implementation} => 
+            {
+                let code = implementation.iter()
+                .map(|x|  x.to_string())
+                .fold("".to_owned(), |acc, new| acc + &new);
+                format!("(BasicBlock {0}) \n", code).to_owned()
+            },
+            Ast::Stmt(stmt) => stmt.to_string(),
+            Ast::FunDecl { name , args, returns, implementation} 
+            => {
+                let args = args.iter()
+                    .map(|a| a.to_string()) 
+                    .fold("".to_owned(), |acc , a_s| acc + &a_s);
+                let code = implementation.to_string();
+                format!("(FunDecl {0} (args {1}) (returns {2}))\n {3}", name, args, returns.name, implementation.to_string())
+            }
+        }
+    }
 }
